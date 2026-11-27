@@ -1,0 +1,622 @@
+do
+    local PC = _G.PC or getgenv().PC
+    if not PC then
+        warn("[NEXUS] PC table not found — load main script first.")
+        return
+    end
+
+    local RS = PC.RS
+    local UIS = PC.UIS
+    local LP = PC.LP
+    local T = PC.T
+    local cfg = PC.cfg
+    local Lighting = game:GetService("Lighting")
+    local TweenService = game:GetService("TweenService")
+
+    cfg.chStyle = cfg.chStyle or 1
+    cfg.chThickness = cfg.chThickness or 2
+    cfg.chLength = cfg.chLength or 12
+    cfg.chGap = cfg.chGap or 4
+    cfg.chDot = cfg.chDot ~= false
+    cfg.chOutline = cfg.chOutline or false
+    cfg.fpsBoost = cfg.fpsBoost or false
+    cfg.ambientOn = cfg.ambientOn or false
+    cfg.ambientColor = cfg.ambientColor or 1
+    cfg.screenBloom = cfg.screenBloom or false
+    cfg.screenBlur = cfg.screenBlur or false
+    cfg.screenColor = cfg.screenColor or false
+    cfg.screenVignette = cfg.screenVignette or false
+    cfg.screenDOF = cfg.screenDOF or false
+    cfg.screenSun = cfg.screenSun or false
+    cfg.screenAtmos = cfg.screenAtmos or false
+
+    PC.colors = PC.colors or {
+        Color3.fromRGB(255, 255, 255),
+        Color3.fromRGB(255, 60, 60),
+        Color3.fromRGB(60, 255, 120),
+        Color3.fromRGB(80, 160, 255),
+        Color3.fromRGB(255, 220, 60),
+        Color3.fromRGB(255, 80, 220),
+    }
+    PC.colorNames = PC.colorNames or { "WHITE", "RED", "GREEN", "BLUE", "YELLOW", "PINK", "RAINBOW" }
+    PC.RAINBOW_IDX = PC.RAINBOW_IDX or 7
+
+    local visualPage = PC.pgVisual
+    local function nextY()
+        local highest = 0
+        for _, c in ipairs(visualPage:GetChildren()) do
+            if c:IsA("GuiObject") and c.Visible then
+                local bottom = c.Position.Y.Offset + c.Size.Y.Offset
+                if bottom > highest then highest = bottom end
+            end
+        end
+        return highest + 8
+    end
+
+    local baseY = nextY()
+
+    PC.mkHeader(visualPage, baseY, "CROSSHAIR OPTIONS")
+    PC.btnChStyle = PC.mkBtn(visualPage, baseY + 28, 1, 0, "STYLE: CROSS", false)
+    PC.btnChDot = PC.mkBtn(visualPage, baseY + 58, 1, 0, "CENTER DOT: ON", true)
+    PC.btnChOutline = PC.mkBtn(visualPage, baseY + 88, 1, 0, "OUTLINE: OFF", false)
+
+    PC.chThickFill, PC.chThickVal = PC.mkSlider(visualPage, baseY + 122, "THICKNESS", "1 - 6 px", 0.2,
+        function(pos)
+            local v = math.clamp(math.floor(1 + pos * 5 + 0.5), 1, 6)
+            cfg.chThickness = v
+            return tostring(v)
+        end,
+        function(pos) end
+    )
+
+    PC.chLenFill, PC.chLenVal = PC.mkSlider(visualPage, baseY + 200, "LENGTH", "4 - 30 px", 0.3,
+        function(pos)
+            local v = math.clamp(math.floor(4 + pos * 26 + 0.5), 4, 30)
+            cfg.chLength = v
+            return tostring(v)
+        end,
+        function(pos) end
+    )
+
+    PC.chGapFill, PC.chGapVal = PC.mkSlider(visualPage, baseY + 278, "GAP", "0 - 20 px", 0.2,
+        function(pos)
+            local v = math.clamp(math.floor(pos * 20 + 0.5), 0, 20)
+            cfg.chGap = v
+            return tostring(v)
+        end,
+        function(pos) end
+    )
+
+    local fxY = baseY + 356
+    PC.mkHeader(visualPage, fxY, "SCREEN EFFECTS")
+    PC.btnBloom = PC.mkBtn(visualPage, fxY + 28, 1, 0, "BLOOM: OFF", false)
+    PC.btnBlur = PC.mkBtn(visualPage, fxY + 58, 1, 0, "BLUR: OFF", false)
+    PC.btnColorCor = PC.mkBtn(visualPage, fxY + 88, 1, 0, "COLOR CORRECT: OFF", false)
+    PC.btnVignette = PC.mkBtn(visualPage, fxY + 118, 1, 0, "VIGNETTE: OFF", false)
+    PC.btnDOF = PC.mkBtn(visualPage, fxY + 148, 1, 0, "DEPTH OF FIELD: OFF", false)
+    PC.btnSun = PC.mkBtn(visualPage, fxY + 178, 1, 0, "SUN RAYS: OFF", false)
+    PC.btnAtmos = PC.mkBtn(visualPage, fxY + 208, 1, 0, "ATMOSPHERE: OFF", false)
+
+    local ambY = fxY + 242
+    PC.mkHeader(visualPage, ambY, "AMBIENT")
+    PC.btnAmbient = PC.mkBtn(visualPage, ambY + 28, 1, 0, "AMBIENT: OFF", false)
+    PC.btnAmbientColor = PC.mkBtn(visualPage, ambY + 58, 1, 0, "COLOR: WHITE", false)
+
+    local boostY = ambY + 92
+    PC.mkHeader(visualPage, boostY, "PERFORMANCE")
+    PC.btnFpsBoost = PC.mkBtn(visualPage, boostY + 28, 1, 0, "FPS BOOST (TEXTURES): OFF", false)
+
+    local chStyles = { "CROSS", "X", "CIRCLE", "SQUARE", "DOT ONLY", "TSHAPE", "CHEVRON" }
+    local chStyleNames = { "CROSS", "X", "CIRCLE", "SQUARE", "DOT", "T", "CHEVRON" }
+
+    local chGui = LP:WaitForChild("PlayerGui"):FindFirstChild("NEXUS_Crosshair")
+    if not chGui then
+        chGui = Instance.new("ScreenGui")
+        chGui.Name = "NEXUS_Crosshair"
+        chGui.ResetOnSpawn = false
+        chGui.IgnoreGuiInset = true
+        chGui.DisplayOrder = 999995
+        chGui.Parent = LP:WaitForChild("PlayerGui")
+    end
+
+    local chFrame = chGui:FindFirstChild("CHFrame")
+    if not chFrame then
+        chFrame = Instance.new("Frame")
+        chFrame.Name = "CHFrame"
+        chFrame.Size = UDim2.new(0, 100, 0, 100)
+        chFrame.Position = UDim2.new(0.5, -50, 0.5, -50)
+        chFrame.BackgroundTransparency = 1
+        chFrame.Visible = false
+        chFrame.Parent = chGui
+    end
+
+    for _, c in ipairs(chFrame:GetChildren()) do
+        if c:IsA("GuiObject") and c.Name ~= "CHTitle" then c:Destroy() end
+    end
+    for _, c in ipairs(chGui:GetDescendants()) do
+        if c:IsA("Frame") and c.Name == "CenterDot" then c:Destroy() end
+    end
+
+    if PC.killPart6Crosshair then PC.killPart6Crosshair() end
+
+    local chTitleLbl = chFrame:FindFirstChild("CHTitle")
+    if not chTitleLbl then
+        chTitleLbl = Instance.new("TextLabel")
+        chTitleLbl.Name = "CHTitle"
+        chTitleLbl.Size = UDim2.new(1, 0, 0, 16)
+        chTitleLbl.Position = UDim2.new(0, 0, 1, 6)
+        chTitleLbl.BackgroundTransparency = 1
+        chTitleLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+        chTitleLbl.TextSize = 13
+        chTitleLbl.Font = Enum.Font.GothamBold
+        chTitleLbl.TextStrokeTransparency = 0.4
+        chTitleLbl.Parent = chFrame
+    end
+
+    local lines = {}
+
+    local function makeLine(name, size, pos)
+        local l = Instance.new("Frame")
+        l.Name = name
+        l.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        l.BorderSizePixel = 0
+        l.AnchorPoint = Vector2.new(0.5, 0.5)
+        l.Size = size
+        l.Position = pos
+        l.Parent = chFrame
+        return l
+    end
+
+    local function makeOutline(parent)
+        local o = Instance.new("Frame")
+        o.Name = "Outline"
+        o.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        o.BorderSizePixel = 0
+        o.AnchorPoint = Vector2.new(0.5, 0.5)
+        o.Size = UDim2.new(1, 2, 1, 2)
+        o.Position = UDim2.new(0.5, 0, 0.5, 0)
+        o.ZIndex = parent.ZIndex - 1
+        o.Visible = false
+        o.Parent = parent
+        return o
+    end
+
+    local function buildCross()
+        for _, l in ipairs(lines) do l:Destroy() end
+        lines = {}
+        local thick = cfg.chThickness
+        local len = cfg.chLength
+        local gap = cfg.chGap
+        local top = makeLine("Top", UDim2.new(0, thick, 0, len), UDim2.new(0.5, 0, 0.5, -(gap + len / 2)))
+        local bot = makeLine("Bot", UDim2.new(0, thick, 0, len), UDim2.new(0.5, 0, 0.5, gap + len / 2))
+        local lft = makeLine("Lft", UDim2.new(0, len, 0, thick), UDim2.new(0.5, -(gap + len / 2), 0.5, 0))
+        local rgt = makeLine("Rgt", UDim2.new(0, len, 0, thick), UDim2.new(0.5, gap + len / 2, 0.5, 0))
+        lines = { top, bot, lft, rgt }
+        for _, l in ipairs(lines) do makeOutline(l) end
+    end
+
+    local function buildX()
+        for _, l in ipairs(lines) do l:Destroy() end
+        lines = {}
+        local thick = cfg.chThickness
+        local len = cfg.chLength
+        local gap = cfg.chGap
+        for i = 1, 4 do
+            local l = makeLine("Diag" .. i, UDim2.new(0, thick, 0, len), UDim2.new(0.5, 0, 0.5, 0))
+            local offset = gap + len / 2
+            local angle = math.rad(45 * i - 90)
+            l.Position = UDim2.new(0.5, math.cos(angle) * offset, 0.5, math.sin(angle) * offset)
+            l.Rotation = 45 * i
+            table.insert(lines, l)
+        end
+        for _, l in ipairs(lines) do makeOutline(l) end
+    end
+
+    local function buildCircle()
+        for _, l in ipairs(lines) do l:Destroy() end
+        lines = {}
+        local segments = 24
+        local radius = cfg.chGap + cfg.chLength
+        for i = 1, segments do
+            local a = (i / segments) * math.pi * 2
+            local l = makeLine("Seg" .. i, UDim2.new(0, cfg.chThickness, 0, cfg.chThickness), UDim2.new(0.5, math.cos(a) * radius, 0.5, math.sin(a) * radius))
+            table.insert(lines, l)
+        end
+    end
+
+    local function buildSquare()
+        for _, l in ipairs(lines) do l:Destroy() end
+        lines = {}
+        local size = cfg.chLength * 2 + cfg.chGap
+        local top = makeLine("Top", UDim2.new(0, size, 0, cfg.chThickness), UDim2.new(0.5, 0, 0.5, -size / 2))
+        local bot = makeLine("Bot", UDim2.new(0, size, 0, cfg.chThickness), UDim2.new(0.5, 0, 0.5, size / 2))
+        local lft = makeLine("Lft", UDim2.new(0, cfg.chThickness, 0, size), UDim2.new(0.5, -size / 2, 0.5, 0))
+        local rgt = makeLine("Rgt", UDim2.new(0, cfg.chThickness, 0, size), UDim2.new(0.5, size / 2, 0.5, 0))
+        lines = { top, bot, lft, rgt }
+    end
+
+    local function buildDotOnly()
+        for _, l in ipairs(lines) do l:Destroy() end
+        lines = {}
+    end
+
+    local function buildTShape()
+        for _, l in ipairs(lines) do l:Destroy() end
+        lines = {}
+        local thick = cfg.chThickness
+        local len = cfg.chLength
+        local gap = cfg.chGap
+        local top = makeLine("T_Top", UDim2.new(0, len * 2, 0, thick), UDim2.new(0.5, 0, 0.5, -(gap + len)))
+        local stem = makeLine("T_Stem", UDim2.new(0, thick, 0, len * 2), UDim2.new(0.5, 0, 0.5, gap + len / 2))
+        lines = { top, stem }
+        for _, l in ipairs(lines) do makeOutline(l) end
+    end
+
+    local function buildChevron()
+        for _, l in ipairs(lines) do l:Destroy() end
+        lines = {}
+        local thick = cfg.chThickness
+        local len = cfg.chLength
+        for i = 1, 2 do
+            local l = makeLine("Chev" .. i, UDim2.new(0, thick, 0, len), UDim2.new(0.5, i == 1 and -6 or 6, 0.5, -6))
+            l.Rotation = i == 1 and -35 or 35
+            table.insert(lines, l)
+        end
+        for _, l in ipairs(lines) do makeOutline(l) end
+    end
+
+    local builders = { buildCross, buildX, buildCircle, buildSquare, buildDotOnly, buildTShape, buildChevron }
+
+    local function rebuildCrosshair()
+        local fn = builders[cfg.chStyle] or buildCross
+        fn()
+        local dot = chFrame:FindFirstChild("CenterDot")
+        if cfg.chDot then
+            if not dot then
+                dot = Instance.new("Frame")
+                dot.Name = "CenterDot"
+                dot.Size = UDim2.new(0, 3, 0, 3)
+                dot.Position = UDim2.new(0.5, -1.5, 0.5, -1.5)
+                dot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+                dot.BorderSizePixel = 0
+                dot.Parent = chFrame
+                Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+            end
+            dot.Visible = true
+        elseif dot then
+            dot.Visible = false
+        end
+    end
+    PC.rebuildCrosshair = rebuildCrosshair
+
+    rebuildCrosshair()
+
+    local spinAngle = 0
+    RS.RenderStepped:Connect(function(dt)
+        if not cfg.crosshairEnabled then
+            chFrame.Visible = false
+            return
+        end
+        chFrame.Visible = true
+
+        local col
+        if cfg.crosshairRainbow then
+            col = Color3.fromHSV((tick() * 0.3) % 1, 1, 1)
+        else
+            col = Color3.fromRGB(255, 255, 255)
+        end
+        for _, l in ipairs(lines) do
+            l.BackgroundColor3 = col
+            if l.Name:sub(1, 4) == "Diag" or l.Name:sub(1, 4) == "Chev" then
+                local baseRot = tonumber(l.Name:match("%d+")) or 0
+                l.Rotation = baseRot * 45 + spinAngle
+            else
+                l.Rotation = spinAngle
+            end
+            local out = l:FindFirstChild("Outline")
+            if out then
+                out.Visible = cfg.chOutline
+                out.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+            end
+        end
+
+        local dot = chFrame:FindFirstChild("CenterDot")
+        if dot then
+            dot.BackgroundColor3 = col
+            dot.Visible = cfg.chDot
+        end
+
+        spinAngle = (spinAngle + dt * cfg.crosshairSpin * 60) % 360
+
+        if cfg.crosshairTitleOn then
+            chTitleLbl.Visible = true
+            chTitleLbl.Text = cfg.crosshairTitle or "NEXUS"
+            if cfg.crosshairTitleRainbow then
+                chTitleLbl.TextColor3 = Color3.fromHSV((tick() * 0.5) % 1, 1, 1)
+            else
+                chTitleLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+            end
+        else
+            chTitleLbl.Visible = true
+            chTitleLbl.Text = "NEXUS"
+            chTitleLbl.TextColor3 = Color3.fromHSV((tick() * 1.5) % 1, 1, 1)
+        end
+    end)
+
+    local effects = {}
+
+    local function ensureEffect(name, class, props)
+        if effects[name] and effects[name].Parent then return effects[name] end
+        local e = Instance.new(class)
+        e.Name = "NEXUS_" .. name
+        for k, v in pairs(props or {}) do
+            pcall(function() e[k] = v end)
+        end
+        e.Parent = Lighting
+        effects[name] = e
+        return e
+    end
+
+    local function removeEffect(name)
+        if effects[name] then
+            effects[name]:Destroy()
+            effects[name] = nil
+        end
+    end
+
+    local function setBloom(state)
+        cfg.screenBloom = state
+        if state then
+            ensureEffect("Bloom", "BloomEffect", { Intensity = 1.2, Size = 24, Threshold = 1.1 })
+        else
+            removeEffect("Bloom")
+        end
+    end
+
+    local function setBlur(state)
+        cfg.screenBlur = state
+        if state then
+            ensureEffect("Blur", "BlurEffect", { Size = 12 })
+        else
+            removeEffect("Blur")
+        end
+    end
+
+    local function setColorCor(state)
+        cfg.screenColor = state
+        if state then
+            local col = cfg.ambientColor == PC.RAINBOW_IDX and Color3.fromHSV((tick() * 0.2) % 1, 1, 1) or (PC.colors[cfg.ambientColor] or Color3.fromRGB(255, 255, 255))
+            ensureEffect("ColorCor", "ColorCorrectionEffect", { Brightness = 0, Contrast = 0.2, Saturation = 0.25, TintColor = col })
+        else
+            removeEffect("ColorCor")
+        end
+    end
+
+    local function setVignette(state)
+        cfg.screenVignette = state
+        if state then
+            removeEffect("Vignette")
+            local parentGui = Instance.new("ScreenGui")
+            parentGui.Name = "NEXUS_VignetteGui"
+            parentGui.ResetOnSpawn = false
+            parentGui.IgnoreGuiInset = true
+            parentGui.DisplayOrder = 999990
+            parentGui.Parent = LP:WaitForChild("PlayerGui")
+            local ve = Instance.new("ImageLabel")
+            ve.Name = "NEXUS_Vignette"
+            ve.Size = UDim2.new(1, 0, 1, 0)
+            ve.BackgroundTransparency = 1
+            ve.Image = "rbxassetid://5554236805"
+            ve.ImageColor3 = Color3.fromRGB(0, 0, 0)
+            ve.ImageTransparency = 0.3
+            ve.ScaleType = Enum.ScaleType.Stretch
+            ve.ZIndex = 999990
+            ve.Parent = parentGui
+            effects.Vignette = ve
+        else
+            if effects.Vignette then
+                local g = effects.Vignette.Parent
+                effects.Vignette:Destroy()
+                if g then g:Destroy() end
+                effects.Vignette = nil
+            end
+        end
+    end
+
+    local function setDOF(state)
+        cfg.screenDOF = state
+        if state then
+            ensureEffect("DOF", "DepthOfFieldEffect", { FarIntensity = 0.25, FocusDistance = 30, InFocusRadius = 40, NearIntensity = 0.15 })
+        else
+            removeEffect("DOF")
+        end
+    end
+
+    local function setSun(state)
+        cfg.screenSun = state
+        if state then
+            ensureEffect("Sun", "SunRaysEffect", { Intensity = 0.15, Spread = 0.9 })
+        else
+            removeEffect("Sun")
+        end
+    end
+
+    local function setAtmos(state)
+        cfg.screenAtmos = state
+        if state then
+            ensureEffect("Atmos", "Atmosphere", { Density = 0.35, Offset = 0.1, Color = Color3.fromRGB(199, 199, 199), Decay = Color3.fromRGB(106, 112, 125), Glare = 0.4, Haze = 1.5 })
+        else
+            removeEffect("Atmos")
+        end
+    end
+
+    local ambSaved = nil
+
+    local function setAmbient(state)
+        cfg.ambientOn = state
+        if state then
+            ambSaved = { Ambient = Lighting.Ambient, OutdoorAmbient = Lighting.OutdoorAmbient }
+            local col = cfg.ambientColor == PC.RAINBOW_IDX and Color3.fromHSV((tick() * 0.2) % 1, 1, 1) or (PC.colors[cfg.ambientColor] or Color3.fromRGB(255, 255, 255))
+            Lighting.Ambient = col
+            Lighting.OutdoorAmbient = col
+        else
+            if ambSaved then
+                Lighting.Ambient = ambSaved.Ambient
+                Lighting.OutdoorAmbient = ambSaved.OutdoorAmbient
+                ambSaved = nil
+            end
+        end
+    end
+
+    local textureCache = {}
+
+    local function setFpsBoost(state)
+        cfg.fpsBoost = state
+        if state then
+            textureCache = {}
+            for _, d in ipairs(workspace:GetDescendants()) do
+                if d:IsA("Decal") or d:IsA("Texture") then
+                    table.insert(textureCache, { obj = d, transparency = d.Transparency })
+                    d.Transparency = 1
+                end
+            end
+            for _, d in ipairs(Lighting:GetDescendants()) do
+                if d:IsA("Sky") then
+                    textureCache.Sky = { obj = d, parent = d.Parent }
+                    d.Parent = nil
+                end
+            end
+            for _, d in ipairs(workspace:GetDescendants()) do
+                if d:IsA("ParticleEmitter") or d:IsA("Trail") or d:IsA("Beam") or d:IsA("Fire") or d:IsA("Smoke") or d:IsA("Sparkles") then
+                    table.insert(textureCache, { obj = d, enabled = d.Enabled })
+                    d.Enabled = false
+                end
+            end
+        else
+            for _, entry in ipairs(textureCache) do
+                if entry.obj and entry.obj.Parent then
+                    if entry.transparency ~= nil then
+                        entry.obj.Transparency = entry.transparency
+                    elseif entry.enabled ~= nil then
+                        entry.obj.Enabled = entry.enabled
+                    end
+                end
+            end
+            if textureCache.Sky and textureCache.Sky.obj then
+                textureCache.Sky.obj.Parent = textureCache.Sky.parent or Lighting
+            end
+            textureCache = {}
+        end
+    end
+    PC.setFpsBoost = setFpsBoost
+
+    PC.btnChStyle.MouseButton1Click:Connect(function()
+        cfg.chStyle = (cfg.chStyle % #chStyles) + 1
+        PC.btnChStyle.Text = "STYLE: " .. chStyleNames[cfg.chStyle]
+        rebuildCrosshair()
+    end)
+
+    PC.btnChDot.MouseButton1Click:Connect(function()
+        cfg.chDot = not cfg.chDot
+        PC.btnChDot.Text = "CENTER DOT: " .. (cfg.chDot and "ON" or "OFF")
+        PC.btnChDot.BackgroundColor3 = cfg.chDot and T.accent or T.panel2
+        PC.btnChDot.TextColor3 = cfg.chDot and T.bg or T.text
+        local dot = chFrame:FindFirstChild("CenterDot")
+        if dot then dot.Visible = cfg.chDot end
+    end)
+
+    PC.btnChOutline.MouseButton1Click:Connect(function()
+        cfg.chOutline = not cfg.chOutline
+        PC.btnChOutline.Text = "OUTLINE: " .. (cfg.chOutline and "ON" or "OFF")
+        PC.btnChOutline.BackgroundColor3 = cfg.chOutline and T.accent or T.panel2
+        PC.btnChOutline.TextColor3 = cfg.chOutline and T.bg or T.text
+    end)
+
+    PC.btnBloom.MouseButton1Click:Connect(function()
+        setBloom(not cfg.screenBloom)
+        PC.btnBloom.Text = "BLOOM: " .. (cfg.screenBloom and "ON" or "OFF")
+        PC.btnBloom.BackgroundColor3 = cfg.screenBloom and T.accent or T.panel2
+        PC.btnBloom.TextColor3 = cfg.screenBloom and T.bg or T.text
+    end)
+
+    PC.btnBlur.MouseButton1Click:Connect(function()
+        setBlur(not cfg.screenBlur)
+        PC.btnBlur.Text = "BLUR: " .. (cfg.screenBlur and "ON" or "OFF")
+        PC.btnBlur.BackgroundColor3 = cfg.screenBlur and T.accent or T.panel2
+        PC.btnBlur.TextColor3 = cfg.screenBlur and T.bg or T.text
+    end)
+
+    PC.btnColorCor.MouseButton1Click:Connect(function()
+        setColorCor(not cfg.screenColor)
+        PC.btnColorCor.Text = "COLOR CORRECT: " .. (cfg.screenColor and "ON" or "OFF")
+        PC.btnColorCor.BackgroundColor3 = cfg.screenColor and T.accent or T.panel2
+        PC.btnColorCor.TextColor3 = cfg.screenColor and T.bg or T.text
+    end)
+
+    PC.btnVignette.MouseButton1Click:Connect(function()
+        setVignette(not cfg.screenVignette)
+        PC.btnVignette.Text = "VIGNETTE: " .. (cfg.screenVignette and "ON" or "OFF")
+        PC.btnVignette.BackgroundColor3 = cfg.screenVignette and T.accent or T.panel2
+        PC.btnVignette.TextColor3 = cfg.screenVignette and T.bg or T.text
+    end)
+
+    PC.btnDOF.MouseButton1Click:Connect(function()
+        setDOF(not cfg.screenDOF)
+        PC.btnDOF.Text = "DEPTH OF FIELD: " .. (cfg.screenDOF and "ON" or "OFF")
+        PC.btnDOF.BackgroundColor3 = cfg.screenDOF and T.accent or T.panel2
+        PC.btnDOF.TextColor3 = cfg.screenDOF and T.bg or T.text
+    end)
+
+    PC.btnSun.MouseButton1Click:Connect(function()
+        setSun(not cfg.screenSun)
+        PC.btnSun.Text = "SUN RAYS: " .. (cfg.screenSun and "ON" or "OFF")
+        PC.btnSun.BackgroundColor3 = cfg.screenSun and T.accent or T.panel2
+        PC.btnSun.TextColor3 = cfg.screenSun and T.bg or T.text
+    end)
+
+    PC.btnAtmos.MouseButton1Click:Connect(function()
+        setAtmos(not cfg.screenAtmos)
+        PC.btnAtmos.Text = "ATMOSPHERE: " .. (cfg.screenAtmos and "ON" or "OFF")
+        PC.btnAtmos.BackgroundColor3 = cfg.screenAtmos and T.accent or T.panel2
+        PC.btnAtmos.TextColor3 = cfg.screenAtmos and T.bg or T.text
+    end)
+
+    PC.btnAmbient.MouseButton1Click:Connect(function()
+        setAmbient(not cfg.ambientOn)
+        PC.btnAmbient.Text = "AMBIENT: " .. (cfg.ambientOn and "ON" or "OFF")
+        PC.btnAmbient.BackgroundColor3 = cfg.ambientOn and T.accent or T.panel2
+        PC.btnAmbient.TextColor3 = cfg.ambientOn and T.bg or T.text
+    end)
+
+    PC.btnAmbientColor.MouseButton1Click:Connect(function()
+        cfg.ambientColor = (cfg.ambientColor % #PC.colors) + 1
+        PC.btnAmbientColor.Text = "COLOR: " .. PC.colorNames[cfg.ambientColor]
+        if cfg.ambientOn then
+            local col = cfg.ambientColor == PC.RAINBOW_IDX and Color3.fromHSV((tick() * 0.2) % 1, 1, 1) or PC.colors[cfg.ambientColor]
+            Lighting.Ambient = col
+            Lighting.OutdoorAmbient = col
+        end
+        if cfg.screenColor and effects.ColorCor then
+            local col = cfg.ambientColor == PC.RAINBOW_IDX and Color3.fromHSV((tick() * 0.2) % 1, 1, 1) or PC.colors[cfg.ambientColor]
+            effects.ColorCor.TintColor = col
+        end
+    end)
+
+    PC.btnFpsBoost.MouseButton1Click:Connect(function()
+        setFpsBoost(not cfg.fpsBoost)
+        PC.btnFpsBoost.Text = "FPS BOOST (TEXTURES): " .. (cfg.fpsBoost and "ON" or "OFF")
+        PC.btnFpsBoost.BackgroundColor3 = cfg.fpsBoost and T.accent or T.panel2
+        PC.btnFpsBoost.TextColor3 = cfg.fpsBoost and T.bg or T.text
+    end)
+
+    RS.Heartbeat:Connect(function()
+        if cfg.ambientColor == PC.RAINBOW_IDX and cfg.ambientOn then
+            local col = Color3.fromHSV((tick() * 0.2) % 1, 1, 1)
+            Lighting.Ambient = col
+            Lighting.OutdoorAmbient = col
+        end
+        if cfg.screenColor and effects.ColorCor and cfg.ambientColor == PC.RAINBOW_IDX then
+            effects.ColorCor.TintColor = Color3.fromHSV((tick() * 0.2) % 1, 1, 1)
+        end
+    end)
+end
